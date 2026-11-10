@@ -75,6 +75,22 @@ def test_seeded_message_conversations(client: TestClient) -> None:
     assert sum(len(conversation["msgs"]) for conversation in data) == 11
 
 
+def test_send_message_rest_fallback(client: TestClient) -> None:
+    registered = register(client)
+    response = client.post(
+        "/api/messages/send",
+        headers={"Authorization": f"Bearer {registered['token']}"},
+        json={
+            "receiverUsername": "rahul_gamer",
+            "text": "REST fallback message",
+            "isFile": True,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["message"]["text"] == "REST fallback message"
+    assert response.json()["message"]["isFile"] is True
+
+
 def test_register_and_login(client: TestClient) -> None:
     registered = register(client)
     assert registered["ok"] is True
@@ -94,6 +110,19 @@ def test_register_and_login(client: TestClient) -> None:
         json={"ident": "TEST_PLAYER@example.com", "password": "Player123"},
     )
     assert email_response.json()["ok"] is True
+    update = client.put(
+        "/api/users/me",
+        headers={"Authorization": f"Bearer {registered['token']}"},
+        json={"username": "renamed_player"},
+    )
+    assert update.status_code == 200
+    assert update.json()["user"]["username"] == "renamed_player"
+    assert update.json()["token"]
+    updated_profile = client.get(
+        "/api/messages/conversations",
+        headers={"Authorization": f"Bearer {update.json()['token']}"},
+    )
+    assert updated_profile.status_code == 200
 
 
 def test_tournament_creation_registration_and_status_rbac(client: TestClient) -> None:
@@ -164,11 +193,21 @@ def test_websocket_chat_auth_and_delivery(client: TestClient) -> None:
     registered = register(client)
     token = registered["token"]
     with client.websocket_connect(f"/ws/chat?token={token}") as websocket:
+        assert websocket.receive_json()["type"] == "presence"
+        websocket.send_json({"type": "typing", "to": "test_player"})
+        assert websocket.receive_json() == {"type": "typing", "from": "test_player"}
+
         websocket.send_json(
-            {"receiverUsername": "rahul_gamer", "text": "Hello from websocket"}
+            {"type": "chat_message", "to": "test_player", "text": "Hello from websocket"}
         )
-        event = websocket.receive_json()
-        assert event["type"] == "presence"
-        event = websocket.receive_json()
-        assert event["type"] == "message"
-        assert event["message"]["text"] == "Hello from websocket"
+        sent = websocket.receive_json()
+        echoed = websocket.receive_json()
+        assert sent["type"] == echoed["type"] == "chat_message"
+        assert sent["text"] == "Hello from websocket"
+        assert sent["from"] == "test_player"
+
+        websocket.send_json({"type": "mark_seen", "from": "test_player"})
+        assert websocket.receive_json() == {
+            "type": "messages_seen",
+            "from": "test_player",
+        }

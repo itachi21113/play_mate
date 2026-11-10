@@ -252,6 +252,10 @@ def update_user(
 ) -> dict[str, Any]:
     values = body.model_dump(exclude_unset=True)
     field_map = {"full_name": "full_name", "fav_game": "fav_game"}
+    old_username = current_user.username
+    new_username = values.get("username", old_username)
+    if isinstance(new_username, str):
+        new_username = new_username.strip()
     errors = {}
     for field in ("username", "email", "phone"):
         value = values.get(field)
@@ -268,6 +272,27 @@ def update_user(
         return {"ok": False, "errors": errors}
     for key, value in values.items():
         setattr(current_user, field_map.get(key, key), value.strip() if isinstance(value, str) else value)
+    if new_username != old_username:
+        for registration in session.exec(
+            select(TournamentRegistration).where(
+                TournamentRegistration.username == old_username
+            )
+        ).all():
+            registration.username = new_username
+            session.add(registration)
+        for message in session.exec(
+            select(Message).where(
+                or_(
+                    Message.sender_username == old_username,
+                    Message.receiver_username == old_username,
+                )
+            )
+        ).all():
+            if message.sender_username == old_username:
+                message.sender_username = new_username
+            if message.receiver_username == old_username:
+                message.receiver_username = new_username
+            session.add(message)
     session.add(current_user)
     try:
         session.commit()
@@ -275,7 +300,11 @@ def update_user(
         session.rollback()
         return {"ok": False, "errors": {"username": "Account details already exist."}}
     session.refresh(current_user)
-    return {"ok": True, "user": public_user(current_user)}
+    return {
+        "ok": True,
+        "token": create_access_token(current_user.username),
+        "user": public_user(current_user),
+    }
 
 
 @app.get("/api/tournaments")
@@ -423,8 +452,20 @@ async def send_message(
     session.add(message)
     session.commit()
     session.refresh(message)
+    await manager.send_to_user(
+        receiver.username,
+        {
+            "type": "chat_message",
+            "id": message.id,
+            "from": current_user.username,
+            "to": receiver.username,
+            "text": message.text,
+            "time": message.time_label,
+            "status": message.status,
+            "isFile": message.is_file,
+        },
+    )
     serialized = public_message(message, current_user.username)
-    await manager.send_to_user(receiver.username, {"type": "message", "message": serialized})
     return {"ok": True, "message": serialized}
 
 
@@ -473,11 +514,38 @@ async def websocket_chat(websocket: WebSocket, session: SessionDependency) -> No
     try:
         while True:
             payload = await websocket.receive_json()
-            recipient = payload.get("receiverUsername")
+            event_type = payload.get("type")
+            if event_type == "typing":
+                recipient = payload.get("to")
+                if isinstance(recipient, str):
+                    await manager.send_to_user(
+                        recipient, {"type": "typing", "from": user.username}
+                    )
+                continue
+            if event_type == "mark_seen":
+                partner = payload.get("from")
+                if isinstance(partner, str):
+                    unseen = session.exec(
+                        select(Message).where(
+                            Message.sender_username == partner,
+                            Message.receiver_username == user.username,
+                            Message.status == "delivered",
+                        )
+                    ).all()
+                    for message in unseen:
+                        message.status = "seen"
+                        session.add(message)
+                    session.commit()
+                    await manager.send_to_user(
+                        partner,
+                        {"type": "messages_seen", "from": user.username},
+                    )
+                continue
+            recipient = payload.get("to") or payload.get("receiverUsername")
             text = payload.get("text")
-            if not isinstance(recipient, str) or not isinstance(text, str):
+            if event_type not in (None, "chat_message") or not isinstance(recipient, str) or not isinstance(text, str):
                 await websocket.send_json(
-                    {"type": "error", "message": "receiverUsername and text are required"}
+                    {"type": "error", "message": "A valid chat_message with to and text is required"}
                 )
                 continue
             receiver = session.exec(select(User).where(User.username == recipient)).first()
@@ -498,20 +566,18 @@ async def websocket_chat(websocket: WebSocket, session: SessionDependency) -> No
             session.add(message)
             session.commit()
             session.refresh(message)
-            await manager.send_to_user(
-                user.username,
-                {
-                    "type": "message",
-                    "message": public_message(message, user.username),
-                },
-            )
-            await manager.send_to_user(
-                receiver.username,
-                {
-                    "type": "message",
-                    "message": public_message(message, receiver.username),
-                },
-            )
+            event = {
+                "type": "chat_message",
+                "id": message.id,
+                "from": user.username,
+                "to": receiver.username,
+                "text": message.text,
+                "time": message.time_label,
+                "status": message.status,
+                "isFile": message.is_file,
+            }
+            await manager.send_to_user(user.username, event)
+            await manager.send_to_user(receiver.username, event)
     except WebSocketDisconnect:
         pass
     finally:
