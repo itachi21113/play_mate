@@ -1,7 +1,7 @@
 /* Shared: header, footer, page transitions, scroll effects. */
 (function () {
   var page = document.body.getAttribute("data-page") || "home";
-  /* demo login state (frontend only): a flag in localStorage */
+  /* Login state is backed by the API token and current-user cache. */
   var loggedIn = !!(window.PM && window.PM.currentUser());
   window.PM_LOGGED_IN = loggedIn;
 
@@ -59,7 +59,7 @@
   var curtain = document.getElementById("curtain");
   document.addEventListener("click", function (e) {
     var a = e.target.closest("a[href]");
-    if (a && a.hasAttribute("data-logout")) { try { localStorage.removeItem("pm_user"); } catch (err) {} }
+    if (a && a.hasAttribute("data-logout")) { if (window.PM) window.PM.logout(); }
     if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || a.target === "_blank") return;
     var href = a.getAttribute("href");
     if (!href || href.charAt(0) === "#" || /^(https?:|mailto:)/.test(href)) return;

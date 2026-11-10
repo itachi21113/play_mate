@@ -96,14 +96,48 @@
       sub: "Show off your favourite games and let teammates find you.", cta: "View Profile", href: "profile.html", tag: "Your gamer card" }
   ];
 
-  /* ---------------- storage helpers ---------------- */
-  var K = { users: "pm_users", cur: "pm_user", regs: "pm_regs", slots: "pm_slots", custom: "pm_custom_tours", chats: "pm_chats" };
-  function read(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
-  function write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
-  function changed() { try { window.dispatchEvent(new Event("pmchange")); } catch (e) {} }
-
+  var CACHE = { users: [], players: [], tournaments: [], registrations: {}, currentUser: null };
   var PM = W.PM = {};
-  PM.read = read; PM.write = write; PM.keys = K;
+  PM.token = function () { return localStorage.getItem("pm_token"); };
+
+  function apiCall(method, url, body) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, url, false);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    var token = PM.token();
+    if (token) xhr.setRequestHeader("Authorization", "Bearer " + token);
+    xhr.send(body === undefined ? null : JSON.stringify(body));
+    var response;
+    try { response = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
+    catch (e) { throw new Error("The server returned an invalid response."); }
+    if (xhr.status < 200 || xhr.status >= 300) {
+      throw new Error(response.detail || response.error || "Request failed (" + xhr.status + ").");
+    }
+    return response;
+  }
+
+  PM.refreshBootstrap = function () {
+    var data = apiCall("GET", "/api/bootstrap");
+    CACHE.users = data.users || [];
+    CACHE.players = data.players || [];
+    CACHE.tournaments = data.tournaments || [];
+    CACHE.registrations = data.registrations || {};
+    W.PLAYERS = CACHE.players;
+    W.TOURNAMENTS = CACHE.tournaments;
+    var username = localStorage.getItem("pm_user");
+    if (!username && PM.token()) {
+      try {
+        var payload = JSON.parse(atob(PM.token().split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+        username = payload.sub || null;
+        if (username) localStorage.setItem("pm_user", username);
+      } catch (e) {}
+    }
+    CACHE.currentUser = username ? CACHE.users.filter(function (u) {
+      return u.username.toLowerCase() === username.toLowerCase();
+    })[0] || null : null;
+    window.dispatchEvent(new Event("pmchange"));
+    return data;
+  };
 
   /* avatars */
   var COLORS = ["#ff6a1a", "#18c8ff", "#a855f7", "#22c55e", "#ef4444", "#eab308", "#ec4899", "#14b8a6"];
@@ -140,103 +174,83 @@
   };
   PM.cleanPhone = function (v) { return (v || "").replace(/[\s-]/g, "").replace(/^(\+91|91|0)(?=\d{10}$)/, ""); };
 
-  /* users */
-  PM.users = function () {
-    var u = read(K.users, null);
-    if (!u) {
-      u = [{ fullName: "Rahul Gamer", username: "rahul_gamer", email: "demo@playmate.com", phone: "9876543210", password: "Demo@123",
-             bio: "Passionate gamer looking for new teammates and gaming friends.", favGame: "BGMI", avatar: "" }];
-      write(K.users, u);
-    }
-    return u;
-  };
+  PM.users = function () { return CACHE.users; };
   PM.currentUser = function () {
-    var id; try { id = localStorage.getItem(K.cur); } catch (e) {}
-    if (!id) return null;
-    var found = PM.users().filter(function (u) { return u.username.toLowerCase() === id.toLowerCase(); })[0];
-    if (!found) { try { localStorage.removeItem(K.cur); } catch (e) {} return null; }
-    return found;
+    var username = localStorage.getItem("pm_user");
+    return username ? CACHE.users.filter(function (u) {
+      return u.username.toLowerCase() === username.toLowerCase();
+    })[0] || null : CACHE.currentUser;
   };
   PM.register = function (d) {
-    var users = PM.users(), errs = {};
-    if (users.some(function (u) { return u.username.toLowerCase() === d.username.trim().toLowerCase(); })) errs.username = "That username is already taken.";
-    if (users.some(function (u) { return u.email.toLowerCase() === d.email.trim().toLowerCase(); })) errs.email = "An account with this email already exists.";
-    if (users.some(function (u) { return u.phone === PM.cleanPhone(d.phone); })) errs.phone = "This phone number is already registered.";
-    if (Object.keys(errs).length) return { ok: false, errors: errs };
-    var user = { fullName: d.fullName.trim(), username: d.username.trim(), email: d.email.trim(), phone: PM.cleanPhone(d.phone),
-                 password: d.password, bio: "", favGame: "", avatar: "" };
-    users.push(user); write(K.users, users);
-    try { localStorage.setItem(K.cur, user.username); } catch (e) {}
-    return { ok: true, user: user };
+    var res = apiCall("POST", "/api/auth/register", {
+      fullName: d.fullName, username: d.username, email: d.email,
+      phone: PM.cleanPhone(d.phone), password: d.password
+    });
+    if (res.ok) {
+      localStorage.setItem("pm_token", res.token);
+      localStorage.setItem("pm_user", res.user.username);
+      PM.refreshBootstrap();
+    }
+    return res;
   };
   PM.login = function (ident, pw) {
-    ident = (ident || "").trim().toLowerCase();
-    var u = PM.users().filter(function (x) { return x.email.toLowerCase() === ident || x.username.toLowerCase() === ident; })[0];
-    if (!u) return { ok: false, error: "No account found. Please register first." };
-    if (u.password !== pw) return { ok: false, error: "Incorrect password. Try again." };
-    try { localStorage.setItem(K.cur, u.username); } catch (e) {}
-    return { ok: true, user: u };
-  };
-  PM.logout = function () { try { localStorage.removeItem(K.cur); } catch (e) {} };
-  PM.updateUser = function (oldUsername, patch) {
-    var users = PM.users(), errs = {};
-    users.forEach(function (u) {
-      if (u.username.toLowerCase() === oldUsername.toLowerCase()) return;
-      if (patch.username && u.username.toLowerCase() === patch.username.toLowerCase()) errs.username = "That username is already taken.";
-      if (patch.email && u.email.toLowerCase() === patch.email.toLowerCase()) errs.email = "Another account uses this email.";
-      if (patch.phone && u.phone === patch.phone) errs.phone = "Another account uses this phone number.";
-    });
-    if (Object.keys(errs).length) return { ok: false, errors: errs };
-    var me = users.filter(function (u) { return u.username.toLowerCase() === oldUsername.toLowerCase(); })[0];
-    Object.keys(patch).forEach(function (k) { me[k] = patch[k]; });
-    if (!write(K.users, users)) return { ok: false, errors: { avatar: "Could not save: browser storage is full. Try a smaller picture." } };
-    if (patch.username && patch.username !== oldUsername) {
-      try { localStorage.setItem(K.cur, patch.username); } catch (e) {}
-      var regs = read(K.regs, {}); if (regs[oldUsername]) { regs[patch.username] = regs[oldUsername]; delete regs[oldUsername]; write(K.regs, regs); }
+    var res = apiCall("POST", "/api/auth/login", { ident: ident, password: pw });
+    if (res.ok) {
+      localStorage.setItem("pm_token", res.token);
+      localStorage.setItem("pm_user", res.user.username);
+      PM.refreshBootstrap();
     }
-    changed();
-    return { ok: true, user: me };
+    return res;
+  };
+  PM.logout = function () {
+    localStorage.removeItem("pm_token");
+    localStorage.removeItem("pm_user");
+    CACHE.currentUser = null;
+  };
+  PM.updateUser = function (oldUsername, patch) {
+    var res = apiCall("PUT", "/api/users/me", patch);
+    if (res.ok) {
+      if (res.user.username !== oldUsername) localStorage.setItem("pm_user", res.user.username);
+      if (res.token) localStorage.setItem("pm_token", res.token);
+      PM.refreshBootstrap();
+    }
+    return res;
   };
 
   /* profile lookup: own account or a sample player */
   PM.profileFor = function (id) {
     var cur = PM.currentUser();
-    if (!id) return cur ? { self: true, username: cur.username, name: cur.fullName, email: cur.email, phone: cur.phone, bio: cur.bio, favGame: cur.favGame, avatar: cur.avatar, online: true, games: [] } : null;
-    if (cur && cur.username.toLowerCase() === id.toLowerCase()) return PM.profileFor();
-    var p = W.PLAYERS.filter(function (x) { return x.id === id; })[0];
-    if (!p) return null;
-    return { self: false, username: p.id, name: p.name, bio: p.bio, favGame: p.game, img: p.img, online: p.online, last: p.last, games: p.games };
+    if (!id || (cur && cur.username.toLowerCase() === id.toLowerCase())) {
+      return cur ? { self: true, username: cur.username, name: cur.fullName, email: cur.email, phone: cur.phone,
+        bio: cur.bio, favGame: cur.favGame, avatar: cur.avatar, online: cur.online, games: cur.games || [] } : null;
+    }
+    var user = CACHE.users.filter(function (u) { return u.username.toLowerCase() === id.toLowerCase(); })[0];
+    if (user) return { self: false, username: user.username, name: user.fullName, bio: user.bio,
+      favGame: user.favGame, img: user.avatar, avatar: user.avatar, online: user.online, last: user.last,
+      games: user.games || [] };
+    var p = W.PLAYERS.filter(function (x) { return x.id.toLowerCase() === id.toLowerCase(); })[0];
+    return p ? { self: false, username: p.id, name: p.name, bio: p.bio, favGame: p.game,
+      img: p.img, online: p.online, last: p.last, games: p.games } : null;
   };
 
   /* tournaments */
-  PM.tournaments = function () {
-    var custom = read(K.custom, []);
-    return W.TOURNAMENTS.concat(custom);
-  };
+  PM.tournaments = function () { return CACHE.tournaments; };
   PM.tournament = function (id) { return PM.tournaments().filter(function (t) { return t.id === id; })[0]; };
   PM.addTournament = function (t) {
-    var custom = read(K.custom, []);
-    t.id = "c" + Date.now(); t.status = "upcoming"; t.taken = 0; t.unit = "players"; t.custom = true;
-    custom.push(t); write(K.custom, custom); changed(); return t;
+    var res = apiCall("POST", "/api/tournaments", t);
+    PM.refreshBootstrap();
+    return res.tournament || res;
   };
-  PM.extraTaken = function (id) { return (read(K.slots, {})[id]) || 0; };
-  PM.slotsLeft = function (t) { return Math.max(0, t.max - t.taken - PM.extraTaken(t.id)); };
+  PM.slotsLeft = function (t) { return Math.max(0, t.max - t.taken); };
   PM.isRegistered = function (id) {
     var u = PM.currentUser(); if (!u) return false;
-    return (read(K.regs, {})[u.username] || []).indexOf(id) !== -1;
+    return (CACHE.registrations[u.username] || []).indexOf(id) !== -1;
   };
   PM.registerFor = function (id) {
-    var t = PM.tournament(id), u = PM.currentUser();
-    if (!t) return { ok: false, message: "Tournament not found." };
-    if (!u) return { ok: false, login: true, message: "Please log in to register for a tournament." };
-    if (t.status !== "upcoming") return { ok: false, message: "Registration is closed for this tournament." };
-    if (PM.isRegistered(id)) return { ok: false, message: "You are already registered for this tournament." };
-    if (PM.slotsLeft(t) <= 0) return { ok: false, message: "Sorry, all slots are filled." };
-    var regs = read(K.regs, {}), slots = read(K.slots, {});
-    (regs[u.username] = regs[u.username] || []).push(id);
-    slots[id] = (slots[id] || 0) + 1;
-    write(K.regs, regs); write(K.slots, slots); changed();
-    return { ok: true, message: "You're registered for " + t.name + "! See you in the lobby." };
+    if (!PM.currentUser()) return { ok: false, login: true, message: "Please log in to register for a tournament." };
+    var res = apiCall("POST", "/api/tournaments/" + encodeURIComponent(id) + "/register", {});
+    PM.refreshBootstrap();
+    return res;
   };
 
   /* formatting */
@@ -248,4 +262,5 @@
     var p = (t || "00:00").split(":"), h = +p[0], m = p[1], ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + m + " " + ap;
   };
   PM.query = function (name) { var m = location.search.match(new RegExp("[?&]" + name + "=([^&]*)")); return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : ""; };
+  PM.refreshBootstrap();
 })();
