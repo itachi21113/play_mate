@@ -31,7 +31,7 @@
       <section className="section" id="tournaments"><h2>Available Tournaments</h2>
         ${tours.length ? h`<div className="grid tour-grid">${tours.map(function (t) {
           return h`<${PMC.TournamentCard} key=${t.id} t=${t} onResult=${function (r) { toast.show(r.message, r.ok ? "ok" : "err"); }} />`; })}</div>`
-        : h`<${PMC.Empty} title=${"No " + g.name + " tournaments yet"} text="Be the first to host one."><a className="btn btn-primary" href="tournaments.html">Create Tournament</a></${PMC.Empty}>`}
+        : h`<${PMC.Empty} title=${"No " + g.name + " tournaments yet"} text="Browse tournaments hosted by verified organizations."><a className="btn btn-primary" href="tournaments.html">Explore Tournaments</a></${PMC.Empty}>`}
       </section>
 
       <section className="section" id="online"><h2>Online Players</h2>

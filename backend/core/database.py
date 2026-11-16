@@ -3,7 +3,7 @@ import os
 from collections.abc import Generator
 
 import bcrypt
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -40,20 +40,20 @@ PLAYERS = [
 ]
 
 TOURNAMENTS = [
-    ("t1", "BGMI Squad Showdown", "bgmi", "2026-11-21", "18:00", 50, 10000, 100, 64, "players", "upcoming", "Play-Mate Official", "rahul_gamer", "Squad-based BGMI tournament with 4 matches on Erangel and Miramar. Points are awarded for placement and kills."),
-    ("t2", "Erangel Battle Cup", "bgmi", "2026-11-10", "16:00", 0, 5000, 100, 100, "players", "ongoing", "Rohan X", "rohanx", "Free-entry daily cup on Erangel. Matches are live right now, check the leaderboard after the final round."),
+    ("t1", "BGMI Squad Showdown", "bgmi", "2026-11-21", "18:00", 50, 10000, 100, 64, "players", "upcoming", "Amit Esports", "amit_pro", "Squad-based BGMI tournament with 4 matches on Erangel and Miramar. Points are awarded for placement and kills."),
+    ("t2", "Erangel Battle Cup", "bgmi", "2026-11-10", "16:00", 0, 5000, 100, 100, "players", "ongoing", "Amit Esports", "amit_pro", "Free-entry daily cup on Erangel. Matches are live right now, check the leaderboard after the final round."),
     ("t3", "Valorant Night Clash", "valorant", "2026-11-15", "20:00", 100, 15000, 32, 20, "teams", "upcoming", "Amit Pro", "amit_pro", "5v5 single-elimination bracket. Best of one until the semis, best of three for the final."),
-    ("t4", "Radiant Cup Season 2", "valorant", "2026-10-18", "19:00", 150, 25000, 16, 16, "teams", "completed", "Play-Mate Official", "rahul_gamer", "Season 2 of the Radiant Cup has finished. Winners were crowned after a packed final on Ascent."),
-    ("t5", "Block Builders Challenge", "minecraft", "2026-11-24", "17:00", 0, 2000, 50, 18, "players", "upcoming", "Sneha Plays", "sneha_plays", "Build the best themed structure in 2 hours. Judged on creativity, detail and use of redstone."),
-    ("t6", "Free Fire Booyah Cup", "free-fire", "2026-11-18", "19:30", 30, 5000, 48, 40, "players", "upcoming", "Karan Elite", "karan_elite", "Solo custom-room tournament across three maps. Highest total points after three rounds wins."),
-    ("t7", "Bermuda Rush Weekend", "free-fire", "2026-11-10", "15:00", 20, 2500, 48, 44, "players", "ongoing", "Dev Headshot", "dev_headshot", "Weekend rush event on Bermuda. Registrations are closed while matches are in progress."),
-    ("t8", "CS2 5v5 Clash", "cs2", "2026-11-28", "21:00", 200, 20000, 16, 9, "teams", "upcoming", "Vikram Rush", "vikram_rush", "Competitive 5v5 on the active duty map pool. Teams are seeded by registration order."),
-    ("t9", "Dust Masters Open", "cs2", "2026-10-25", "20:00", 100, 8000, 16, 16, "teams", "completed", "Kabir Ops", "kabir_ops", "An open bracket on classic maps. The event has concluded and results are final."),
-    ("t10", "Apex Legends Trios", "apex-legends", "2026-11-22", "18:30", 0, 3000, 20, 11, "teams", "upcoming", "Neha Ace", "neha_ace", "Trios tournament with 6 lobbies. Points for placement and kills across all games."),
-    ("t11", "Fortnite Victory Royale Cup", "fortnite", "2026-11-30", "19:00", 99, 6000, 100, 52, "players", "upcoming", "Simran FN", "simran_fn", "Solo cup with the Victory Royale format. Five matches, best three scores count."),
-    ("t12", "CODM Ranked Rumble", "codm", "2026-11-17", "20:00", 50, 8000, 64, 30, "players", "upcoming", "Arjun Clutch", "arjun_clutch", "Multiplayer ranked-style knockout on Hardpoint and Search and Destroy."),
-    ("t13", "Warzone Mobile Open", "codm", "2026-10-12", "18:00", 0, 4000, 64, 64, "players", "completed", "Play-Mate Official", "rahul_gamer", "Battle royale open event. Completed, with results announced on the community page."),
-    ("t14", "Minecraft PvP Arena", "minecraft", "2026-11-10", "14:00", 0, 1500, 32, 32, "players", "ongoing", "Ananya Builds", "ananya_builds", "Bracket-style PvP arena fights. Spectating is open to everyone."),
+    ("t4", "Radiant Cup Season 2", "valorant", "2026-10-18", "19:00", 150, 25000, 16, 16, "teams", "completed", "Amit Esports", "amit_pro", "Season 2 of the Radiant Cup has finished. Winners were crowned after a packed final on Ascent."),
+    ("t5", "Block Builders Challenge", "minecraft", "2026-11-24", "17:00", 0, 2000, 50, 18, "players", "upcoming", "Sneha Gaming Club", "sneha_plays", "Build the best themed structure in 2 hours. Judged on creativity, detail and use of redstone."),
+    ("t6", "Free Fire Booyah Cup", "free-fire", "2026-11-18", "19:30", 30, 5000, 48, 40, "players", "upcoming", "Amit Esports", "amit_pro", "Solo custom-room tournament across three maps. Highest total points after three rounds wins."),
+    ("t7", "Bermuda Rush Weekend", "free-fire", "2026-11-10", "15:00", 20, 2500, 48, 44, "players", "ongoing", "Sneha Gaming Club", "sneha_plays", "Weekend rush event on Bermuda. Registrations are closed while matches are in progress."),
+    ("t8", "CS2 5v5 Clash", "cs2", "2026-11-28", "21:00", 200, 20000, 16, 9, "teams", "upcoming", "Amit Esports", "amit_pro", "Competitive 5v5 on the active duty map pool. Teams are seeded by registration order."),
+    ("t9", "Dust Masters Open", "cs2", "2026-10-25", "20:00", 100, 8000, 16, 16, "teams", "completed", "Sneha Gaming Club", "sneha_plays", "An open bracket on classic maps. The event has concluded and results are final."),
+    ("t10", "Apex Legends Trios", "apex-legends", "2026-11-22", "18:30", 0, 3000, 20, 11, "teams", "upcoming", "Amit Esports", "amit_pro", "Trios tournament with 6 lobbies. Points for placement and kills across all games."),
+    ("t11", "Fortnite Victory Royale Cup", "fortnite", "2026-11-30", "19:00", 99, 6000, 100, 52, "players", "upcoming", "Sneha Gaming Club", "sneha_plays", "Solo cup with the Victory Royale format. Five matches, best three scores count."),
+    ("t12", "CODM Ranked Rumble", "codm", "2026-11-17", "20:00", 50, 8000, 64, 30, "players", "upcoming", "Amit Esports", "amit_pro", "Multiplayer ranked-style knockout on Hardpoint and Search and Destroy."),
+    ("t13", "Warzone Mobile Open", "codm", "2026-10-12", "18:00", 0, 4000, 64, 64, "players", "completed", "Amit Esports", "amit_pro", "Battle royale open event. Completed, with results announced on the community page."),
+    ("t14", "Minecraft PvP Arena", "minecraft", "2026-11-10", "14:00", 0, 1500, 32, 32, "players", "ongoing", "Sneha Gaming Club", "sneha_plays", "Bracket-style PvP arena fights. Spectating is open to everyone."),
 ]
 
 CHAT_SEEDS = [
@@ -69,6 +69,11 @@ def seed_data(session: Session) -> None:
         username, full_name, fav_game, games, online, avatar, last_seen, bio, reply_hint
     ) in enumerate(PLAYERS, start=1):
         is_admin = username == "rahul_gamer"
+        organization_name = {
+            "amit_pro": "Amit Esports",
+            "sneha_plays": "Sneha Gaming Club",
+        }.get(username, "")
+        role = "admin" if is_admin else "organizer" if organization_name else "player"
         session.add(
             User(
                 username=username,
@@ -83,7 +88,9 @@ def seed_data(session: Session) -> None:
                 online=online,
                 last_seen=last_seen,
                 reply_hint=reply_hint,
-                role="admin" if is_admin else "player",
+                role=role,
+                approval_status="approved",
+                organization_name=organization_name,
             )
         )
     session.flush()
@@ -127,7 +134,62 @@ def seed_data(session: Session) -> None:
 
 def init_db_and_seed(database_engine=None) -> None:
     target_engine = database_engine or engine
+    inspector = inspect(target_engine)
+    if inspector.has_table("user"):
+        columns = {column["name"] for column in inspector.get_columns("user")}
+        with target_engine.begin() as connection:
+            if "approval_status" not in columns:
+                connection.execute(text(
+                    'ALTER TABLE "user" ADD COLUMN approval_status '
+                    "VARCHAR NOT NULL DEFAULT 'approved'"
+                ))
+            if "organization_name" not in columns:
+                connection.execute(text(
+                    'ALTER TABLE "user" ADD COLUMN organization_name '
+                    "VARCHAR NOT NULL DEFAULT ''"
+                ))
     SQLModel.metadata.create_all(target_engine)
+    with target_engine.begin() as connection:
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_user_approval_status '
+            'ON "user" (approval_status)'
+        ))
+        connection.execute(text(
+            'UPDATE "user" SET role = \'admin\', organization_name = \'\' '
+            "WHERE username = 'rahul_gamer'"
+        ))
+        connection.execute(text(
+            'UPDATE "user" SET role = \'organizer\', '
+            'organization_name = \'Amit Esports\' WHERE username = \'amit_pro\''
+        ))
+        connection.execute(text(
+            'UPDATE "user" SET role = \'organizer\', '
+            'organization_name = \'Sneha Gaming Club\' '
+            "WHERE username = 'sneha_plays'"
+        ))
+        connection.execute(text(
+            'UPDATE "user" SET role = \'player\', organization_name = \'\' '
+            "WHERE username IN ('karan_elite', 'rohanx', 'priya_sniper', "
+            "'vikram_rush', 'ananya_builds', 'neha_ace', 'arjun_clutch', "
+            "'simran_fn', 'dev_headshot', 'kabir_ops', 'isha_loot')"
+        ))
+        connection.execute(text(
+            'UPDATE "user" SET approval_status = \'approved\' '
+            "WHERE username IN ('rahul_gamer', 'amit_pro', 'sneha_plays', "
+            "'karan_elite', 'rohanx', 'priya_sniper', 'vikram_rush', "
+            "'ananya_builds', 'neha_ace', 'arjun_clutch', 'simran_fn', "
+            "'dev_headshot', 'kabir_ops', 'isha_loot')"
+        ))
+        connection.execute(text(
+            'UPDATE "tournament" SET host = CASE WHEN id IN '
+            "('t2', 't3', 't6', 't8', 't10', 't12', 't13') "
+            "THEN 'Amit Esports' ELSE 'Sneha Gaming Club' END, "
+            "host_username = CASE WHEN id IN "
+            "('t2', 't3', 't6', 't8', 't10', 't12', 't13') "
+            "THEN 'amit_pro' ELSE 'sneha_plays' END "
+            "WHERE id IN ('t1', 't2', 't3', 't4', 't5', 't6', 't7', "
+            "'t8', 't9', 't10', 't11', 't12', 't13', 't14')"
+        ))
     with Session(target_engine) as session:
         user_count = session.exec(select(func.count()).select_from(User)).one()
         if user_count == 0:

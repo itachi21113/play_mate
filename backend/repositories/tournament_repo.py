@@ -61,3 +61,10 @@ def update_status(session: Session, tournament: Tournament, status: str) -> Tour
     session.commit()
     session.refresh(tournament)
     return tournament
+
+
+def delete_tournament(session: Session, tournament: Tournament) -> None:
+    for registration in get_tournament_registrations(session, tournament.id):
+        session.delete(registration)
+    session.delete(tournament)
+    session.commit()

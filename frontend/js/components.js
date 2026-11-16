@@ -60,7 +60,9 @@
   C.RegisterButton = function (p) {
     C.useStore();
     var t = p.t, left = PM.slotsLeft(t), reg = PM.isRegistered(t.id), label = "Register Now", dis = false;
-    if (t.status === "completed") { label = "Completed"; dis = true; }
+    var currentUser = PM.currentUser();
+    if (currentUser && (currentUser.role === "organizer" || currentUser.role === "admin")) { label = "Hosts Cannot Join"; dis = true; }
+    else if (t.status === "completed") { label = "Completed"; dis = true; }
     else if (t.status === "ongoing") { label = "Registration Closed"; dis = true; }
     else if (reg) { label = "Registered \u2713"; dis = true; }
     else if (left <= 0) { label = "Slots Full"; dis = true; }

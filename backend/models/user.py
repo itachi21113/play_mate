@@ -16,3 +16,5 @@ class User(SQLModel, table=True):
     last_seen: str = "Online now"
     reply_hint: str = ""
     role: str = "player"
+    approval_status: str = Field(default="pending", index=True)
+    organization_name: str = Field(default="")

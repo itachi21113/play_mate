@@ -19,13 +19,19 @@ def health() -> dict[str, bool]:
 
 @router.get("/api/bootstrap")
 def bootstrap(session: SessionDependency) -> dict[str, Any]:
-    users = user_repo.get_all_users(session)
+    users = [
+        user for user in user_repo.get_all_users(session)
+        if user.approval_status == "approved"
+    ]
     registrations = {}
     for registration in tournament_repo.get_all_registrations(session):
         registrations.setdefault(registration.username, []).append(registration.tournament_id)
     return {
         "users": [user_to_dict(user) for user in users],
-        "players": [user_to_player_dict(user) for user in users],
+        "players": [
+            user_to_player_dict(user)
+            for user in user_repo.get_approved_players(session)
+        ],
         "tournaments": [
             tournament_to_dict(tournament, session)
             for tournament in tournament_repo.get_all_tournaments(session)
