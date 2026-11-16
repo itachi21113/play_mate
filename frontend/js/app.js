@@ -2,7 +2,8 @@
 (function () {
   var page = document.body.getAttribute("data-page") || "home";
   /* Login state is backed by the API token and current-user cache. */
-  var loggedIn = !!(window.PM && window.PM.currentUser());
+  var currentUser = window.PM && window.PM.currentUser();
+  var loggedIn = !!currentUser;
   window.PM_LOGGED_IN = loggedIn;
 
   var links = [
@@ -14,6 +15,11 @@
   if (loggedIn) {
     links.push({ id: "messages", label: "Messages", href: "messages.html" });
     links.push({ id: "profile",  label: "Profile",  href: "profile.html" });
+    if (currentUser.role === "admin") {
+      links.push({ id: "admin", label: "Admin Panel", href: "admin.html" });
+    } else if (currentUser.role === "organizer") {
+      links.push({ id: "organizer", label: "Organizer Studio", href: "organizer.html" });
+    }
     links.push({ id: "logout",   label: "Logout",   href: "index.html", logout: true });
   }
 

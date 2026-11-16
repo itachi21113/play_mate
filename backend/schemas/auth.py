@@ -1,7 +1,8 @@
 import re
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PHONE_CLEAN_RE = re.compile(r"[\s-]")
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
@@ -24,11 +25,24 @@ class RegisterRequest(BaseModel):
     email: str
     phone: str
     password: str = Field(min_length=8)
+    role: Literal["player", "organizer", "admin"] = "player"
+    organization_name: str = Field(default="", alias="organizationName")
+    admin_secret: str = Field(default="", alias="adminSecret")
+
+    @model_validator(mode="after")
+    def require_organization_name(self):
+        if self.role == "organizer" and not self.organization_name.strip():
+            raise ValueError("Organization name is required for organizer accounts.")
+        return self
 
 
 class LoginRequest(BaseModel):
     ident: str
     password: str
+
+
+class ApprovalRequest(BaseModel):
+    status: Literal["approved", "rejected"]
 
 
 class UpdateProfileRequest(BaseModel):

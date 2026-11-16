@@ -72,6 +72,11 @@ def get_current_user(user: Annotated[User | None, Depends(get_optional_user)]) -
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if user.approval_status != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account approval is required",
+        )
     return user
 
 

@@ -6,7 +6,8 @@
   function useForm(init) {
     var s = useState(init), f = s[0], setF = s[1], e = useState({}), errs = e[0], setErrs = e[1];
     function set(k) { return function (ev) { var v = ev.target.value; setF(function (o) { var n = Object.assign({}, o); n[k] = v; return n; }); }; }
-    return { f: f, errs: errs, setErrs: setErrs, set: set };
+    function setValue(k, v) { setF(function (o) { var n = Object.assign({}, o); n[k] = v; return n; }); }
+    return { f: f, errs: errs, setErrs: setErrs, set: set, setValue: setValue };
   }
   function Field(p) {
     return h`<div className=${"field" + (p.err ? " has-err" : "")}><label htmlFor=${p.id}>${p.label}</label>
@@ -15,18 +16,44 @@
   }
 
   function Register() {
-    var F = useForm({ fullName: "", username: "", email: "", phone: "", password: "", confirm: "" }), f = F.f, errs = F.errs;
+    var F = useForm({ fullName: "", username: "", email: "", phone: "", password: "", confirm: "", role: "player", organizationName: "", adminSecret: "" }), f = F.f, errs = F.errs;
     var m = useState(null), msg = m[0], setMsg = m[1];
     function submit(ev) {
       ev.preventDefault(); var V = PM.validate, r = {};
       r.fullName = V.fullName(f.fullName); r.username = V.username(f.username); r.email = V.email(f.email); r.phone = V.phone(f.phone); r.password = V.password(f.password);
       r.confirm = !f.confirm ? "Please confirm your password." : (f.confirm !== f.password ? "Passwords do not match." : "");
+      if (f.role === "organizer" && !f.organizationName.trim()) r.organizationName = "Organization name is required.";
+      if (f.role === "admin" && PM.users().some(function (user) {
+        return user.role === "admin" && user.approvalStatus === "approved";
+      }) && !f.adminSecret.trim()) r.adminSecret = "Admin Secret Code is required.";
       Object.keys(r).forEach(function (k) { if (!r[k]) delete r[k]; });
-      if (!Object.keys(r).length) { var res = PM.register(f); if (res.ok) { setMsg({ ok: true, t: "Account created! Taking you to Play-Mate..." }); F.setErrs({}); setTimeout(function () { location.href = "index.html"; }, 900); return; } r = res.errors; }
+      if (!Object.keys(r).length) {
+        var res = PM.register(f);
+        if (res.ok && res.pending) {
+          setMsg({ ok: true, pending: true, t: res.message });
+          F.setErrs({});
+          return;
+        }
+        if (res.ok) {
+          setMsg({ ok: true, t: "Account created! Taking you to Play-Mate..." });
+          F.setErrs({});
+          var target = res.user.role === "admin" ? "admin.html" : res.user.role === "organizer" ? "organizer.html" : "index.html";
+          setTimeout(function () { location.href = target; }, 900);
+          return;
+        }
+        r = res.errors || {};
+      }
       setMsg(null); F.setErrs(r);
     }
     return h`<form className="auth-card" noValidate onSubmit=${submit}>
       <h1>Create Your Account</h1><p className="lead">Pick a username and start finding teammates.</p>
+      <div className="role-picker"><span className="role-label">Account Type</span><div className="role-pills" role="group" aria-label="Account type">
+        ${[["player", "Player"], ["organizer", "Tournament Organization"], ["admin", "Admin"]].map(function (item) {
+          return h`<button type="button" className=${f.role === item[0] ? "active" : ""} aria-pressed=${f.role === item[0]} onClick=${function () { F.setValue("role", item[0]); }}>${item[1]}</button>`;
+        })}
+      </div></div>
+      ${f.role === "organizer" ? h`<${Field} id="organizationName" label="Organization Name" ph="Your esports organization" value=${f.organizationName} onChange=${F.set("organizationName")} err=${errs.organizationName} />` : null}
+      ${f.role === "admin" ? h`<${Field} id="adminSecret" label="Admin Secret Code" type="password" ph="Enter the Admin Secret Code" value=${f.adminSecret} onChange=${F.set("adminSecret")} err=${errs.adminSecret} ac="off" />` : null}
       <${Field} id="fullName" label="Full Name" ph="Your full name" value=${f.fullName} onChange=${F.set("fullName")} err=${errs.fullName} ac="name" />
       <${Field} id="username" label="Username" ph="YourGamerTag" value=${f.username} onChange=${F.set("username")} err=${errs.username} ac="username" />
       <${Field} id="email" label="Email Address" type="email" ph="you@example.com" value=${f.email} onChange=${F.set("email")} err=${errs.email} ac="email" />
@@ -35,6 +62,7 @@
       <${Field} id="confirm" label="Confirm Password" type="password" ph="Repeat password" value=${f.confirm} onChange=${F.set("confirm")} err=${errs.confirm} ac="new-password" />
       <button className="btn btn-primary" type="submit">Register</button>
       <p className=${"form-msg" + (msg ? " ok" : "")} aria-live="polite">${msg ? msg.t : ""}</p>
+      ${msg && msg.pending ? h`<p className="pending-link">You can log in after an administrator approves your account. <a href="login.html">Go to Login</a></p>` : null}
       <p className="switch">Already have an account? <a href="login.html">Login</a></p></form>`;
   }
 
@@ -49,7 +77,8 @@
       var res = PM.login(f.email, f.password);
       if (!res.ok) { F.setErrs({}); setMsg({ ok: false, t: res.error }); return; }
       F.setErrs({}); setMsg({ ok: true, t: "Login successful! Redirecting..." });
-      setTimeout(function () { location.href = "index.html"; }, 700);
+      var target = res.user.role === "admin" ? "admin.html" : res.user.role === "organizer" ? "organizer.html" : "index.html";
+      setTimeout(function () { location.href = target; }, 700);
     }
     return h`<form className="auth-card" noValidate onSubmit=${submit}>
       <h1>Login to Play-Mate</h1><p className="lead">Welcome back. Your squad is waiting.</p>
@@ -57,7 +86,7 @@
       <${Field} id="password" label="Password" type="password" ph="Your password" value=${f.password} onChange=${F.set("password")} err=${errs.password} ac="current-password" />
       <button className="btn btn-primary" type="submit">Login</button>
       <p className=${"form-msg" + (msg ? (msg.ok ? " ok" : " err") : "")} aria-live="polite">${msg ? msg.t : ""}</p>
-      <p className="demo-hint">Demo account: <b>demo@playmate.com</b> / <b>Demo@123</b></p>
+      <p className="demo-hint">Demo accounts: Admin <b>demo@playmate.com</b>, Organizer <b>amit_pro</b>, Player <b>karan_elite</b> \u2014 password <b>Demo@123</b></p>
       <p className="switch">New here? <a href="register.html">Register</a></p></form>`;
   }
   PMC.mount(page === "register" ? Register : Login);

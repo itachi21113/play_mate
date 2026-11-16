@@ -51,7 +51,7 @@ def delete_conversation(
 async def websocket_chat(websocket: WebSocket, session: SessionDependency) -> None:
     username = decode_access_token(websocket.query_params.get("token", ""))
     user = user_repo.get_by_username(session, username) if username else None
-    if user is None:
+    if user is None or user.approval_status != "approved":
         await websocket.close(code=1008)
         return
     await manager.connect(user.username, websocket)

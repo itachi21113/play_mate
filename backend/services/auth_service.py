@@ -1,6 +1,7 @@
 import json
+import os
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -17,6 +18,8 @@ def user_to_dict(user: User) -> dict:
         "favGame": user.fav_game, "avatar": user.avatar,
         "games": json.loads(user.games_json), "online": user.online,
         "last": user.last_seen, "reply": user.reply_hint, "role": user.role,
+        "approvalStatus": user.approval_status,
+        "organizationName": user.organization_name,
     }
 
 
@@ -40,16 +43,50 @@ def register_user(session: Session, body) -> dict:
         errors["phone"] = "This phone number is already registered."
     if errors:
         return {"ok": False, "errors": errors}
+    approved_admin_count = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role == "admin", User.approval_status == "approved"
+        )
+    ).one()
+    if (
+        body.role == "admin"
+        and approved_admin_count
+        and body.admin_secret != os.getenv(
+            "ADMIN_SECRET_CODE", "PLAYMATE_ADMIN_2026"
+        )
+    ):
+        return {
+            "ok": False,
+            "errors": {"adminSecret": "The Admin Secret Code is incorrect."},
+        }
+    auto_approve = body.role == "admin" and approved_admin_count == 0
     user = User(
         full_name=body.full_name.strip(), username=username, email=email,
         phone=phone, password_hash=hash_password(body.password),
+        role=body.role,
+        organization_name=body.organization_name.strip()
+        if body.role == "organizer" else "",
+        approval_status="approved" if auto_approve else "pending",
     )
     try:
         user_repo.create_user(session, user)
     except IntegrityError:
         session.rollback()
         return {"ok": False, "errors": {"username": "Account details already exist."}}
-    return {"ok": True, "token": create_access_token(user.username), "user": user_to_dict(user)}
+    if not auto_approve:
+        return {
+            "ok": True,
+            "pending": True,
+            "message": (
+                "Registration submitted! Waiting for Admin approval before you "
+                "can log in."
+            ),
+        }
+    return {
+        "ok": True,
+        "token": create_access_token(user.username),
+        "user": user_to_dict(user),
+    }
 
 
 def authenticate_user(session: Session, body) -> dict:
@@ -58,6 +95,15 @@ def authenticate_user(session: Session, body) -> dict:
         return {"ok": False, "error": "No account found. Please register first."}
     if not verify_password(body.password, user.password_hash):
         return {"ok": False, "error": "Incorrect password. Try again."}
+    if user.approval_status == "pending":
+        return {"ok": False, "error": "Your account is pending Admin approval."}
+    if user.approval_status == "rejected":
+        return {
+            "ok": False,
+            "error": "Your registration request was declined by an Admin.",
+        }
+    if user.approval_status != "approved":
+        return {"ok": False, "error": "Your account is not approved to log in."}
     return {"ok": True, "token": create_access_token(user.username), "user": user_to_dict(user)}
 
 

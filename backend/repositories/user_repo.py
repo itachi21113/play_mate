@@ -8,6 +8,16 @@ def get_all_users(session: Session) -> list[User]:
     return list(session.exec(select(User).order_by(User.id)).all())
 
 
+def get_approved_players(session: Session) -> list[User]:
+    return list(
+        session.exec(
+            select(User)
+            .where(User.role == "player", User.approval_status == "approved")
+            .order_by(User.id)
+        ).all()
+    )
+
+
 def get_by_username(session: Session, username: str) -> User | None:
     return session.exec(
         select(User).where(func.lower(User.username) == username.strip().lower())
@@ -43,6 +53,13 @@ def create_user(session: Session, user: User) -> User:
 def update_user(session: Session, user: User, values: dict) -> User:
     for key, value in values.items():
         setattr(user, key, value)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def save_user(session: Session, user: User) -> User:
     session.add(user)
     session.commit()
     session.refresh(user)

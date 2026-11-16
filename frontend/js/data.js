@@ -175,6 +175,7 @@
   PM.cleanPhone = function (v) { return (v || "").replace(/[\s-]/g, "").replace(/^(\+91|91|0)(?=\d{10}$)/, ""); };
 
   PM.users = function () { return CACHE.users; };
+  PM.request = apiCall;
   PM.currentUser = function () {
     var username = localStorage.getItem("pm_user");
     return username ? CACHE.users.filter(function (u) {
@@ -184,9 +185,13 @@
   PM.register = function (d) {
     var res = apiCall("POST", "/api/auth/register", {
       fullName: d.fullName, username: d.username, email: d.email,
-      phone: PM.cleanPhone(d.phone), password: d.password
+      phone: PM.cleanPhone(d.phone), password: d.password,
+      role: d.role || "player",
+      organizationName: d.organizationName || "",
+      adminSecret: d.adminSecret || ""
     });
     if (res.ok) {
+      if (res.pending) return res;
       localStorage.setItem("pm_token", res.token);
       localStorage.setItem("pm_user", res.user.username);
       PM.refreshBootstrap();

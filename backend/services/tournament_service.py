@@ -35,7 +35,7 @@ def create_new_tournament(session: Session, body, current_user: User) -> dict:
         date=values["date"], time=values["time"], fee=values["fee"],
         prize=values["prize"], max_slots=values["max_slots"], base_taken=0,
         unit=values["unit"], status="upcoming",
-        host=values["host"] or current_user.full_name,
+        host=current_user.organization_name or current_user.full_name,
         host_username=current_user.username, desc=values["description"],
     )
     tournament_repo.create_tournament(session, tournament)
@@ -43,6 +43,11 @@ def create_new_tournament(session: Session, body, current_user: User) -> dict:
 
 
 def register_user_for_tournament(session: Session, tournament_id: str, current_user: User) -> dict:
+    if current_user.role != "player":
+        return {
+            "ok": False,
+            "message": "Only player accounts can participate in tournaments.",
+        }
     tournament = tournament_repo.get_by_id(session, tournament_id)
     if tournament is None:
         return {"ok": False, "message": "Tournament not found."}
@@ -68,5 +73,15 @@ def change_tournament_status(session: Session, tournament_id: str, new_status: s
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     if new_status not in {"upcoming", "ongoing", "completed"}:
         raise HTTPException(status_code=422, detail="Invalid tournament status")
+    allowed_transitions = {
+        "upcoming": "ongoing",
+        "ongoing": "completed",
+        "completed": None,
+    }
+    if (
+        current_user.role != "admin"
+        and allowed_transitions.get(tournament.status) != new_status
+    ):
+        raise HTTPException(status_code=422, detail="Invalid tournament status transition")
     tournament_repo.update_status(session, tournament, new_status)
     return tournament_to_dict(tournament, session)
